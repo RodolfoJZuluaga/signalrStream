@@ -5,6 +5,7 @@ using System.Collections.Generic;
 using System.Collections.ObjectModel;
 using System.Linq;
 using System.Text;
+using System.Threading.Channels;
 using System.Threading.Tasks;
 using System.Windows;
 using System.Windows.Controls;
@@ -26,12 +27,13 @@ namespace Speaker
         private HubConnection _hubConnection;
         private WaveFileWriter _waveFile;
         private WaveInEvent _waveSource;
+        private Channel<byte[]> _channel;
         public ObservableCollection<string> Users { get; set; } = new ObservableCollection<string>();
         public MainWindow()
         {
             InitializeComponent();
             LB_Users.ItemsSource = Users;
-            //InitConnection();
+            InitConnection();
         }
 
         private async void BTN_Connect_Click(object sender, RoutedEventArgs e)
@@ -71,14 +73,21 @@ namespace Speaker
 
         private async Task ToggleRecord(bool isRecording)
         {
+            
             if (isRecording)
             {
                 BTN_Connect.Content = "Stop Recording";
+                _channel = Channel.CreateBounded<byte[]>(2);
+                await _hubConnection.SendAsync("StartStream", TB_Name.Text, _channel.Reader);
 
                 _waveSource = new WaveInEvent();
                 string tempFile = (@"C:\Users\r.zuluaga\Desktop\Test\test1.wav");
                 _waveSource.WaveFormat = new WaveFormat(44100, 1);
-                _waveSource.DataAvailable += WaveSource_DataAvailable;
+                _waveSource.DataAvailable += async (s, e) =>
+                {
+                    _waveFile.Write(e.Buffer, 0, e.BytesRecorded);
+                    await _channel.Writer.WriteAsync(e.Buffer);
+                };
 
                 _waveFile = new WaveFileWriter(tempFile, _waveSource.WaveFormat);
                 _waveSource.StartRecording();
@@ -90,7 +99,8 @@ namespace Speaker
             {
                 _waveSource.StopRecording();
                 _waveFile.Dispose();
-
+                _channel.Writer.Complete();
+                
 
                 BTN_Connect.Content = "Start Recording";
             }

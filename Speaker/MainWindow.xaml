@@ -45,6 +45,6 @@
             <Label Grid.Column="1" Name="L_Status" Content="Disconnected" HorizontalAlignment="Left"/>-->
             <ListBox Grid.Row="1" Name="LB_Users" Grid.ColumnSpan="2" Margin="5" Padding="5" MinHeight="300" SelectionMode="Single"/>
         </Grid>
-        <Button Grid.Row="2" Name="BTN_Listen" Content="Start Listening" Click="BTN_Listen_Click"  IsEnabled="False"/>
+        <Button Grid.Row="2" Name="BTN_Listen" Content="Start Listening" Click="BTN_Listen_Click"/>
     </Grid>
 </Window>
