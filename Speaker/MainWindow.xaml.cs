@@ -3,8 +3,11 @@ using NAudio.Wave;
 using System;
 using System.Collections.Generic;
 using System.Collections.ObjectModel;
+using System.IO;
 using System.Linq;
+using System.Media;
 using System.Text;
+using System.Threading;
 using System.Threading.Channels;
 using System.Threading.Tasks;
 using System.Windows;
@@ -50,7 +53,7 @@ namespace Speaker
         private async Task InitConnection()
         {
             _hubConnection = new HubConnectionBuilder()
-               .WithUrl("http://localhost:65322/hubs/stream")
+               .WithUrl("http://localhost:64747/stream")
                .Build();
 
             await _hubConnection.StartAsync();
@@ -81,24 +84,22 @@ namespace Speaker
                 await _hubConnection.SendAsync("StartStream", TB_Name.Text, _channel.Reader);
 
                 _waveSource = new WaveInEvent();
-                string tempFile = (@"C:\Users\r.zuluaga\Desktop\Test\test1.wav");
+                //string tempFile = (@"C:\Users\r.zuluaga\Desktop\Test\test1.wav");
                 _waveSource.WaveFormat = new WaveFormat(44100, 1);
                 _waveSource.DataAvailable += async (s, e) =>
                 {
-                    _waveFile.Write(e.Buffer, 0, e.BytesRecorded);
+                    //_waveFile.Write(e.Buffer, 0, e.BytesRecorded);
                     await _channel.Writer.WriteAsync(e.Buffer);
                 };
 
-                _waveFile = new WaveFileWriter(tempFile, _waveSource.WaveFormat);
+                //_waveFile = new WaveFileWriter(tempFile, _waveSource.WaveFormat);
                 _waveSource.StartRecording();
 
-
-                //await _hubConnection.InvokeAsync("StartStream", TB_Name.Text.ToString());
             }
             else
             {
                 _waveSource.StopRecording();
-                _waveFile.Dispose();
+                //_waveFile.Dispose();
                 _channel.Writer.Complete();
                 
 
@@ -111,9 +112,100 @@ namespace Speaker
             _waveFile.Write(e.Buffer, 0, e.BytesRecorded);
         }
 
-        private void BTN_Listen_Click(object sender, RoutedEventArgs e)
+        private async void BTN_Listen_Click(object sender, RoutedEventArgs e)
         {
-            //var 
+            var stream = LB_Users.SelectedItem?.ToString();
+            if(stream != null)
+            {
+                await WatchStream(stream);
+            }
+        }
+
+        public async Task WatchStream(string streamName)
+        {
+            //using (var ms = new MemoryStream())
+            //{
+            //    var cancellationTokenSource = new CancellationTokenSource();
+            //    var channel = await _hubConnection.StreamAsChannelAsync<byte[]>(
+            //        "WatchStream", streamName, cancellationTokenSource.Token);
+
+            //    //var w = new WaveOut();
+            //    //IWaveProvider provider = new RawSourceWaveStream(ms, new WaveFormat(44100, 1));
+
+            //    //w.Init(provider);
+
+
+            //    while (await channel.WaitToReadAsync())
+            //    {
+            //        while (channel.TryRead(out var soundStream))
+            //        {
+            //            ms.Write(soundStream, 0 , soundStream.Length);
+            //        }
+            //    }
+            //    ms.Position = 0;
+
+            //    var w = new WaveOut();
+            //    IWaveProvider provider = new RawSourceWaveStream(
+            //             new MemoryStream(ms.ToArray()), new WaveFormat(44100, 1));
+
+            //    w.Init(provider);
+            //    w.Play();
+            //}
+
+            //var cancellationTokenSource = new CancellationTokenSource();
+            //var channel = await _hubConnection.StreamAsChannelAsync<byte[]>(
+            //    "WatchStream", streamName, cancellationTokenSource.Token);
+
+            //string tempFile = (@"C:\Users\rzla8\Documents\test\test1.wav");
+            //var w = new WaveFileWriter(tempFile, new WaveFormat(44100, 1));
+            //while (await channel.WaitToReadAsync())
+            //{
+            //    while (channel.TryRead(out var soundStream))
+            //    {
+            //        w.Write(soundStream, 0, soundStream.Length);
+            //    }
+            //}
+
+            //w.Dispose();
+
+            var waveFormat = new WaveFormat(44100, 1);
+            var buffer = new BufferedWaveProvider(waveFormat);
+
+
+            new Thread(async () =>
+            {
+                var cancellationTokenSource = new CancellationTokenSource();
+                var channel = await _hubConnection.StreamAsChannelAsync<byte[]>(
+                    "WatchStream", streamName, cancellationTokenSource.Token);
+
+
+                while (await channel.WaitToReadAsync())
+                {
+                    while (channel.TryRead(out var soundStream))
+                    {
+                        try
+                        {
+                            buffer.AddSamples(soundStream, 0, soundStream.Length);
+                        }
+                        catch(Exception ex)
+                        {
+                            var x = ex;
+                        }
+                    }
+                }
+
+                Thread.ResetAbort();
+            }).Start();
+
+            var w = new WaveOut();
+            w.Init(buffer);
+            w.PlaybackStopped += W_PlaybackStopped;
+            w.Play();
+        }
+
+        private void W_PlaybackStopped(object sender, StoppedEventArgs e)
+        {
+            throw new NotImplementedException();
         }
     }
 }
