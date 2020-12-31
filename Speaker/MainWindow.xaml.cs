@@ -76,7 +76,7 @@ namespace Speaker
 
         private async Task ToggleRecord(bool isRecording)
         {
-            
+
             if (isRecording)
             {
                 BTN_Connect.Content = "Stop Recording";
@@ -101,7 +101,7 @@ namespace Speaker
                 _waveSource.StopRecording();
                 //_waveFile.Dispose();
                 _channel.Writer.Complete();
-                
+
 
                 BTN_Connect.Content = "Start Recording";
             }
@@ -115,7 +115,7 @@ namespace Speaker
         private async void BTN_Listen_Click(object sender, RoutedEventArgs e)
         {
             var stream = LB_Users.SelectedItem?.ToString();
-            if(stream != null)
+            if (stream != null)
             {
                 await WatchStream(stream);
             }
@@ -169,34 +169,45 @@ namespace Speaker
             //w.Dispose();
 
             var waveFormat = new WaveFormat(44100, 1);
-            var buffer = new BufferedWaveProvider(waveFormat);
-
-
-            new Thread(async () =>
+            var buffer = new BufferedWaveProvider(waveFormat)
             {
-                var cancellationTokenSource = new CancellationTokenSource();
-                var channel = await _hubConnection.StreamAsChannelAsync<byte[]>(
-                    "WatchStream", streamName, cancellationTokenSource.Token);
+                BufferDuration = TimeSpan.FromSeconds(10),
+                DiscardOnBufferOverflow = true
+            };
+            var waveOut = new WaveOut();
+            waveOut.Init(buffer);
+
+            await Task.WhenAll(GetStreamAudio(buffer, streamName), PlayAudio(buffer, waveOut));
+
+            buffer.ClearBuffer();
+            waveOut.Dispose();
+        }
+
+        private async Task GetStreamAudio(BufferedWaveProvider buffer, string streamName)
+        {
+            var cancellationTokenSource = new CancellationTokenSource();
+            var channel = await _hubConnection.StreamAsChannelAsync<byte[]>(
+                "WatchStream", streamName, cancellationTokenSource.Token);
 
 
-                while (await channel.WaitToReadAsync())
+            while (await channel.WaitToReadAsync())
+            {
+                while (channel.TryRead(out var soundStream))
                 {
-                    while (channel.TryRead(out var soundStream))
+                    try
                     {
-                        try
-                        {
-                            buffer.AddSamples(soundStream, 0, soundStream.Length);
-                        }
-                        catch(Exception ex)
-                        {
-                            var x = ex;
-                        }
+                        buffer.AddSamples(soundStream, 0, soundStream.Length);
+                    }
+                    catch (Exception ex)
+                    {
+                        var x = ex;
                     }
                 }
+            }
+        }
 
-                Thread.ResetAbort();
-            }).Start();
-
+        private async Task PlayAudio(BufferedWaveProvider buffer, WaveOut waveOut)
+        {
             var w = new WaveOut();
             w.Init(buffer);
             w.PlaybackStopped += W_PlaybackStopped;
