@@ -28,14 +28,18 @@ namespace Speaker
     public partial class MainWindow : Window
     {
         private HubConnection _hubConnection;
-        private WaveFileWriter _waveFile;
         private WaveInEvent _waveSource;
         private Channel<byte[]> _channel;
+        private CancellationTokenSource _streamCancelToken;
         public ObservableCollection<string> Users { get; set; } = new ObservableCollection<string>();
         public MainWindow()
         {
             InitializeComponent();
             LB_Users.ItemsSource = Users;
+            //Task.Run(async () =>
+            //{
+            //    await InitConnection();
+            //});
             InitConnection();
         }
 
@@ -71,7 +75,14 @@ namespace Speaker
             {
                 Users.Remove(user);
             });
-
+            _hubConnection.On("ListStreams", (IEnumerable<string> users) =>
+            {
+                Users.Clear();
+                foreach (var user in users)
+                {
+                    Users.Add(user);
+                }
+            });
         }
 
         private async Task ToggleRecord(bool isRecording)
@@ -107,50 +118,35 @@ namespace Speaker
             }
         }
 
-        private void WaveSource_DataAvailable(object sender, WaveInEventArgs e)
-        {
-            _waveFile.Write(e.Buffer, 0, e.BytesRecorded);
-        }
-
         private async void BTN_Listen_Click(object sender, RoutedEventArgs e)
         {
-            var stream = LB_Users.SelectedItem?.ToString();
-            if (stream != null)
+            if (BTN_Listen.Content.ToString().Contains("Start"))
             {
-                await WatchStream(stream);
+                var stream = LB_Users.SelectedItem?.ToString();
+                if (stream != null)
+                {
+                    BTN_Listen.Content = "Stop Listening";
+                    try
+                    {
+                        await ListenToStream(stream);
+                    }
+                    catch (OperationCanceledException)
+                    {
+
+                    }
+                }
             }
+            else
+            {
+                BTN_Listen.Content = "Start Listening";
+                _streamCancelToken.Cancel();
+            }
+
+
         }
 
-        public async Task WatchStream(string streamName)
+        public async Task ListenToStream(string streamName)
         {
-            //using (var ms = new MemoryStream())
-            //{
-            //    var cancellationTokenSource = new CancellationTokenSource();
-            //    var channel = await _hubConnection.StreamAsChannelAsync<byte[]>(
-            //        "WatchStream", streamName, cancellationTokenSource.Token);
-
-            //    //var w = new WaveOut();
-            //    //IWaveProvider provider = new RawSourceWaveStream(ms, new WaveFormat(44100, 1));
-
-            //    //w.Init(provider);
-
-
-            //    while (await channel.WaitToReadAsync())
-            //    {
-            //        while (channel.TryRead(out var soundStream))
-            //        {
-            //            ms.Write(soundStream, 0 , soundStream.Length);
-            //        }
-            //    }
-            //    ms.Position = 0;
-
-            //    var w = new WaveOut();
-            //    IWaveProvider provider = new RawSourceWaveStream(
-            //             new MemoryStream(ms.ToArray()), new WaveFormat(44100, 1));
-
-            //    w.Init(provider);
-            //    w.Play();
-            //}
 
             //var cancellationTokenSource = new CancellationTokenSource();
             //var channel = await _hubConnection.StreamAsChannelAsync<byte[]>(
@@ -168,26 +164,40 @@ namespace Speaker
 
             //w.Dispose();
 
-            var waveFormat = new WaveFormat(44100, 1);
-            var buffer = new BufferedWaveProvider(waveFormat)
+            var buffer = new BufferedWaveProvider(new WaveFormat(44100, 1))
             {
                 BufferDuration = TimeSpan.FromSeconds(10),
                 DiscardOnBufferOverflow = true
             };
             var waveOut = new WaveOut();
             waveOut.Init(buffer);
+            waveOut.PlaybackStopped += WaveOut_PlaybackStopped;
 
-            await Task.WhenAll(GetStreamAudio(buffer, streamName), PlayAudio(buffer, waveOut));
+            try
+            {
+                waveOut.Play();
+                await GetStreamAudio(buffer, streamName);
+                //await Task.WhenAll(GetStreamAudio(buffer, streamName), PlayAudio(buffer, waveOut));
+            }
+            finally
+            {
+                buffer.ClearBuffer();
+                waveOut.Dispose();
+            }
 
-            buffer.ClearBuffer();
-            waveOut.Dispose();
+
+        }
+
+        private void WaveOut_PlaybackStopped(object sender, StoppedEventArgs e)
+        {
+            throw new NotImplementedException();
         }
 
         private async Task GetStreamAudio(BufferedWaveProvider buffer, string streamName)
         {
-            var cancellationTokenSource = new CancellationTokenSource();
+            _streamCancelToken = new CancellationTokenSource();
             var channel = await _hubConnection.StreamAsChannelAsync<byte[]>(
-                "WatchStream", streamName, cancellationTokenSource.Token);
+                "ListenToStream", streamName, _streamCancelToken.Token);
 
 
             while (await channel.WaitToReadAsync())
@@ -206,17 +216,5 @@ namespace Speaker
             }
         }
 
-        private async Task PlayAudio(BufferedWaveProvider buffer, WaveOut waveOut)
-        {
-            var w = new WaveOut();
-            w.Init(buffer);
-            w.PlaybackStopped += W_PlaybackStopped;
-            w.Play();
-        }
-
-        private void W_PlaybackStopped(object sender, StoppedEventArgs e)
-        {
-            throw new NotImplementedException();
-        }
     }
 }
