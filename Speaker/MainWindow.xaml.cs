@@ -36,10 +36,6 @@ namespace Speaker
         {
             InitializeComponent();
             LB_Users.ItemsSource = Users;
-            //Task.Run(async () =>
-            //{
-            //    await InitConnection();
-            //});
             InitConnection();
         }
 
@@ -95,22 +91,18 @@ namespace Speaker
                 await _hubConnection.SendAsync("StartStream", TB_Name.Text, _channel.Reader);
 
                 _waveSource = new WaveInEvent();
-                //string tempFile = (@"C:\Users\r.zuluaga\Desktop\Test\test1.wav");
                 _waveSource.WaveFormat = new WaveFormat(44100, 1);
                 _waveSource.DataAvailable += async (s, e) =>
                 {
-                    //_waveFile.Write(e.Buffer, 0, e.BytesRecorded);
                     await _channel.Writer.WriteAsync(e.Buffer);
                 };
 
-                //_waveFile = new WaveFileWriter(tempFile, _waveSource.WaveFormat);
                 _waveSource.StartRecording();
 
             }
             else
             {
                 _waveSource.StopRecording();
-                //_waveFile.Dispose();
                 _channel.Writer.Complete();
 
 
@@ -181,6 +173,7 @@ namespace Speaker
             }
             finally
             {
+                BTN_Listen.Content = "Start Listening";
                 buffer.ClearBuffer();
                 waveOut.Dispose();
             }
